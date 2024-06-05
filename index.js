@@ -1,11 +1,33 @@
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const app = express();
+const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const port = 3000;
 
 app.use(cors());
 app.use(express.json());
+
+function createToken(user) {
+  const token = jwt.sign(
+    {
+      email: user.email,
+    },
+    "secret",
+    { expiresIn: "7d" }
+  );
+  return token;
+}
+
+function verifyToken(req, res, next) {
+  const token = req.headers.authorization.split(" ")[1];
+  const verify = jwt.verify(token, "secret");
+  if (!verify?.email) {
+    return res.send("You are not authorized");
+  }
+  req.user = verify.email;
+  next();
+}
 
 const uri =
   "mongodb+srv://almohaiminul1:SXPZ5ylPmCEnDBW4@cluster0.iti4ukf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
@@ -47,7 +69,7 @@ async function run() {
     });
 
     // Edit Phone
-    app.patch("/phones/:id", async (req, res) => {
+    app.patch("/phones/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const phoneData = req.body;
       const result = await phoneCollection.updateOne(
@@ -58,7 +80,7 @@ async function run() {
     });
 
     // Delete
-    app.delete("/phones/:id", async (req, res) => {
+    app.delete("/phones/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const result = await phoneCollection.deleteOne({
         _id: new ObjectId(id),
@@ -69,15 +91,17 @@ async function run() {
     // user info post
     app.post("/user", async (req, res) => {
       const user = req.body;
+      const token = createToken(user);
       const isExist = await userCollection.findOne({ email: user?.email });
       if (isExist?.email) {
         return res.send({
           status: "success",
           message: "User already exist",
+          token,
         });
       }
-      const result = await userCollection.insertOne(user);
-      res.send(result);
+      await userCollection.insertOne(user);
+      res.send({ token });
     });
 
     // single user get
@@ -91,13 +115,6 @@ async function run() {
     app.get("/user/get/:id", async (req, res) => {
       const id = req.params.id;
       const result = await userCollection.findOne({ _id: new ObjectId(id) });
-      res.send(result);
-    });
-
-    // single user get
-    app.get("/user/:email", async (req, res) => {
-      const email = req.params.email;
-      const result = await userCollection.findOne({ email: email });
       res.send(result);
     });
 
